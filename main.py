@@ -56,7 +56,7 @@ def movement_direction(at, to, velocity):
 
 
 class Shot:
-    def __init__(self, x, y, direction, damage=10, shot_speed=5):
+    def __init__(self, x, y, direction, owner, damage=10, shot_speed=5):
         self.x = x
         self.y = y
         self.direction = direction
@@ -64,6 +64,10 @@ class Shot:
         self.inactive = False
         self.damage = damage
         self.shot_speed = shot_speed
+        self.owner = owner
+
+        pygame.mixer.music.load(f'sounds/shot_{random.randint(0, 5) + 1}.mp3')
+        pygame.mixer.music.play()
 
     def move(self):
         self.x += math.cos(math.radians(self.direction)) * self.shot_speed
@@ -72,7 +76,10 @@ class Shot:
 
     def draw(self, screen):
         if not self.inactive:
-            pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y, 2, 8))
+            if self.owner == "player":
+                pygame.draw.rect(screen, (0, 255, 0), (self.x, self.y, 2, 8))
+            else:
+                pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y, 2, 8))
 
     def collision(self, other_x, other_y, other_w, other_h):
         if self.aliveFor > 15 and not self.inactive:
@@ -127,9 +134,9 @@ class Enemy:
         if self.laser_frequency and random.randint(0, self.laser_frequency) == 0:
             if self.laser_navigation and self.game:
                 shots.append(Shot(self.x + 32, self.y + 32, self.get_angle(self.game.get_to_x(), self.game.get_to_y()),
-                                  self.laser_damage))
+                                  "enemy", self.laser_damage))
             else:
-                shots.append(Shot(self.x + 32, self.y + 64, self.direction, damage=self.laser_damage))
+                shots.append(Shot(self.x + 32, self.y + 64, self.direction, "enemy", damage=self.laser_damage))
 
     def get_angle(self, player_x, player_y):
         return math.degrees(math.atan2(player_y - self.y, player_x - self.x))
@@ -146,6 +153,8 @@ class Enemy:
 
     def delete(self):
         del self
+        pygame.mixer.music.load(f'sounds/explosion_{random.randint(0, 4) + 1}.mp3')
+        pygame.mixer.music.play()
 
 
 class Game:
@@ -221,12 +230,12 @@ class Game:
                 Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
                       laser_frequency=100, laser_speed=7, laser_damage=5))
 
-        if random.random() < enemy_type_span(self.score, 500, 1600, True) / 300:
+        if random.random() < enemy_type_span(self.score, 450, 1600, True) / 300:
             self.enemies.append(
                 Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_difficult.png', 8, 30, 2. + random.random() * .1,
                       direction_shift_by=4, random_direction_shift_after=2))
 
-        if random.random() < enemy_type_span(self.score, 800, 2400, True) / 150:
+        if random.random() < enemy_type_span(self.score, 400, 2400, True) / 150:
             self.enemies.append(
                 Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_2.png', 10, 20, 1.9 + random.random() * .1,
                       laser_frequency=100, laser_speed=12, laser_damage=5, laser_navigation=True,
@@ -301,14 +310,16 @@ class Game:
 
     def shoot(self):
         if self.__shotCannonLeft:
-            self.__shots.append(Shot(self.__at_x - 14, self.__at_y, self.theta, shot_speed=self.shot_speed))
+            self.__shots.append(Shot(self.__at_x - 14, self.__at_y, self.theta, "player", shot_speed=self.shot_speed))
         elif not self.__shotCannonLeft:
-            self.__shots.append(Shot(self.__at_x + 14, self.__at_y, self.theta, shot_speed=self.shot_speed))
+            self.__shots.append(Shot(self.__at_x + 14, self.__at_y, self.theta, "player", shot_speed=self.shot_speed))
         self.__shotCannonLeft = not self.__shotCannonLeft
 
     def ship_collision_with_shot(self):
         for shot in self.__shots:
             if shot.collision(self.__at_x - 32, self.__at_y - 32, 64, 64):
+                if shot.owner == "player" and shot.aliveFor < 50:
+                    return
                 self.lives -= 1
                 shot.inactive = True
                 print(f"Lives: {self.lives}")
