@@ -6,6 +6,7 @@ import pygame
 
 pygame.init()
 clock = pygame.time.Clock()
+pygame.mixer.set_num_channels(1000)
 running = True
 
 
@@ -56,7 +57,7 @@ def movement_direction(at, to, velocity):
 
 
 class Shot:
-    def __init__(self, x, y, direction, owner, damage=10, shot_speed=5):
+    def __init__(self, x, y, direction, owner, damage=10, shot_speed=5, x_momentum=0., y_momentum=0.):
         self.x = x
         self.y = y
         self.direction = direction
@@ -66,12 +67,26 @@ class Shot:
         self.shot_speed = shot_speed
         self.owner = owner
 
-        pygame.mixer.music.load(f'sounds/shot_{random.randint(0, 5) + 1}.mp3')
-        pygame.mixer.music.play()
+        if abs(x_momentum) > 7:
+            x_momentum = x_momentum - (x_momentum / abs(x_momentum)) * (abs(x_momentum) - 7)
+        y_momentum *= 2
+        self.x_momentum = x_momentum
+        self.y_momentum = y_momentum
+
+        pygame.mixer.Channel(random.randint(0, 999)).play(
+            pygame.mixer.Sound(f'sounds/shot_{random.randint(0, 5) + 1}.mp3'))
 
     def move(self):
-        self.x += math.cos(math.radians(self.direction)) * self.shot_speed
-        self.y += math.sin(math.radians(self.direction)) * self.shot_speed
+        self.x += math.cos(math.radians(self.direction)) * self.shot_speed + self.x_momentum
+        self.y += math.sin(math.radians(self.direction)) * self.shot_speed + self.y_momentum
+        if self.x_momentum > 0:
+            self.x_momentum -= .2
+        elif self.x_momentum < 0:
+            self.x_momentum += .2
+        if self.y_momentum > 0:
+            self.y_momentum -= .2
+        elif self.y_momentum < 0:
+            self.y_momentum += .2
         self.aliveFor += 1
 
     def draw(self, screen):
@@ -82,7 +97,9 @@ class Shot:
                 pygame.draw.rect(screen, (255, 0, 0), (self.x, self.y, 2, 8))
 
     def collision(self, other_x, other_y, other_w, other_h):
-        if self.aliveFor > 15 and not self.inactive:
+        if self.aliveFor < 15 and self.owner == 'enemy':
+            return
+        if not self.inactive:
             if other_x < self.x < other_x + other_w and other_y < self.y < other_y + other_h:
                 return True
             return False
@@ -134,9 +151,10 @@ class Enemy:
         if self.laser_frequency and random.randint(0, self.laser_frequency) == 0:
             if self.laser_navigation and self.game:
                 shots.append(Shot(self.x + 32, self.y + 32, self.get_angle(self.game.get_to_x(), self.game.get_to_y()),
-                                  "enemy", self.laser_damage))
+                                  "enemy", self.laser_damage, x_momentum=self.momentum, y_momentum=self.speed))
             else:
-                shots.append(Shot(self.x + 32, self.y + 64, self.direction, "enemy", damage=self.laser_damage))
+                shots.append(Shot(self.x + 32, self.y + 64, self.direction, "enemy", damage=self.laser_damage,
+                                  x_momentum=self.momentum, y_momentum=self.speed))
 
     def get_angle(self, player_x, player_y):
         return math.degrees(math.atan2(player_y - self.y, player_x - self.x))
@@ -168,6 +186,7 @@ class Game:
     __shots = []
     __shotCannonLeft = True
     shot_speed = 5
+    __held_space_at_time = 0
 
     def __init__(self):
         self.score = 0
@@ -180,7 +199,7 @@ class Game:
         self.clock = pygame.time.Clock()
         self.ship = pygame.image.load(os.path.join('data', 'spaceship.png'))
         self.theta = 270
-        self.lives = 3
+        self.lives = 5
         self.pause_game = False
 
     def run_frame(self):
@@ -189,8 +208,6 @@ class Game:
                 (mouseX, mouseY) = pygame.mouse.get_pos()
                 self.set_to_x(mouseX)
                 self.set_to_y(mouseY)
-            if e.type == pygame.MOUSEBUTTONDOWN:
-                self.shoot()
             if e.type == pygame.KEYDOWN:
                 self.shoot()
             if e.type == pygame.QUIT:
@@ -200,6 +217,11 @@ class Game:
         if self.pause_game:
             return
 
+        if pygame.mouse.get_pressed()[0]:
+            if self.__held_space_at_time + 120 < pygame.time.get_ticks():
+                self.shoot()
+                self.__held_space_at_time = pygame.time.get_ticks()
+
         self.handle_movement()
         self.display.fill((0, 0, 0))
 
@@ -208,36 +230,38 @@ class Game:
         # self.display.blit(rot_center(pygame.transform.scale(self.ship, (64, 64)), 270 - math.degrees(theta)),
         #                   (self.__at_x - 32, self.__at_y - 32))
 
-        if random.random() < enemy_type_span(self.score, -60, 440) / 50:
+        difficulty = .5 + self.score / 1000
+
+        if random.random() < enemy_type_span(self.score, -60, 440) / 30 * difficulty:
             self.enemies.append(
                 Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_easy.png', 5, 10, 2. + random.random() * .5))
 
-        if random.random() < enemy_type_span(self.score, 100, 560) / 50:
+        if random.random() < enemy_type_span(self.score, 100, 560) / 50 * difficulty:
             self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 20, 3. + random.random() * 2))
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 10, 3. + random.random() * 2))
 
-        if random.random() < enemy_type_span(self.score, 480, 1230, True) / 260:
+        if random.random() < enemy_type_span(self.score, 480, 1230, True) / 260 * difficulty:
             self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 20, 3. + random.random() * 2))
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 10, 2. + random.random() * 2))
 
-        if random.random() < enemy_type_span(self.score, 300, 900) / 50:
+        if random.random() < enemy_type_span(self.score, 300, 900) / 50 * difficulty:
             self.enemies.append(
                 Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
                       laser_frequency=100, laser_speed=7, laser_damage=5))
 
-        if random.random() < enemy_type_span(self.score, 800, 1400, True) / 100:
+        if random.random() < enemy_type_span(self.score, 800, 1400, True) / 100 * difficulty:
             self.enemies.append(
                 Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
                       laser_frequency=100, laser_speed=7, laser_damage=5))
 
-        if random.random() < enemy_type_span(self.score, 450, 1600, True) / 300:
+        if random.random() < enemy_type_span(self.score, 450, 1600, True) / 300 * difficulty:
             self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_difficult.png', 8, 30, 2. + random.random() * .1,
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_difficult.png', 8, 20, 2. + random.random() * .1,
                       direction_shift_by=4, random_direction_shift_after=2))
 
-        if random.random() < enemy_type_span(self.score, 400, 2400, True) / 150:
+        if random.random() < enemy_type_span(self.score, 400, 2000, True) / 150 * difficulty:
             self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_2.png', 10, 20, 1.9 + random.random() * .1,
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_2.png', 10, 10, 1.4 + random.random() * .1,
                       laser_frequency=100, laser_speed=12, laser_damage=5, laser_navigation=True,
                       game_obj=self))
 
@@ -310,9 +334,11 @@ class Game:
 
     def shoot(self):
         if self.__shotCannonLeft:
-            self.__shots.append(Shot(self.__at_x - 14, self.__at_y, self.theta, "player", shot_speed=self.shot_speed))
+            self.__shots.append(Shot(self.__at_x - 14, self.__at_y, self.theta, "player", shot_speed=self.shot_speed,
+                                     x_momentum=self.__v_x, y_momentum=self.__v_y))
         elif not self.__shotCannonLeft:
-            self.__shots.append(Shot(self.__at_x + 14, self.__at_y, self.theta, "player", shot_speed=self.shot_speed))
+            self.__shots.append(Shot(self.__at_x + 14, self.__at_y, self.theta, "player", shot_speed=self.shot_speed,
+                                     x_momentum=self.__v_x, y_momentum=self.__v_y))
         self.__shotCannonLeft = not self.__shotCannonLeft
 
     def ship_collision_with_shot(self):
