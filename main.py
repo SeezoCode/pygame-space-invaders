@@ -67,26 +67,29 @@ class Shot:
         self.shot_speed = shot_speed
         self.owner = owner
 
-        if abs(x_momentum) > 7:
-            x_momentum = x_momentum - (x_momentum / abs(x_momentum)) * (abs(x_momentum) - 7)
-        y_momentum *= 2
-        self.x_momentum = x_momentum
+        # if abs(x_momentum) > 2:
+        #     x_momentum = x_momentum - (x_momentum / abs(x_momentum)) * (abs(x_momentum) - 2)
+        y_momentum *= 1
+        if x_momentum:
+            self.x_momentum = (x_momentum / abs(x_momentum)) * math.pow(abs(x_momentum), 1/4)
+        else:
+            self.x_momentum = 0
         self.y_momentum = y_momentum
 
         pygame.mixer.Channel(random.randint(0, 999)).play(
-            pygame.mixer.Sound(f'sounds/shot_{random.randint(0, 5) + 1}.mp3'))
+            pygame.mixer.Sound(f'sounds/shot_1.mp3'))
 
     def move(self):
         self.x += math.cos(math.radians(self.direction)) * self.shot_speed + self.x_momentum
         self.y += math.sin(math.radians(self.direction)) * self.shot_speed + self.y_momentum
         if self.x_momentum > 0:
-            self.x_momentum -= .2
+            self.x_momentum -= .1
         elif self.x_momentum < 0:
-            self.x_momentum += .2
+            self.x_momentum += .1
         if self.y_momentum > 0:
-            self.y_momentum -= .2
+            self.y_momentum -= .1
         elif self.y_momentum < 0:
-            self.y_momentum += .2
+            self.y_momentum += .1
         self.aliveFor += 1
 
     def draw(self, screen):
@@ -111,7 +114,7 @@ class Shot:
 class Enemy:
     def __init__(self, x, y, direction, image_name, score, health=10, speed=1., random_direction_shift_after=0,
                  direction_shift_by=0, laser_damage=0, laser_speed=0, laser_frequency=0, laser_navigation=False,
-                 game_obj=None):
+                 game_obj=None, property_list=None):
         self.x = x
         self.y = y
         self.direction = direction
@@ -128,6 +131,7 @@ class Enemy:
         self.laser_frequency = laser_frequency
         self.momentum = 0
         self.laser_navigation = laser_navigation
+        self.property_list = property_list
         if game_obj is not None:
             self.game = game_obj
 
@@ -171,7 +175,7 @@ class Enemy:
 
     def delete(self):
         del self
-        pygame.mixer.music.load(f'sounds/explosion_{random.randint(0, 4) + 1}.mp3')
+        pygame.mixer.music.load(f'sounds/explosion_{random.randint(0, 1) + 1}.mp3')
         pygame.mixer.music.play()
 
 
@@ -187,6 +191,7 @@ class Game:
     __shotCannonLeft = True
     shot_speed = 5
     __held_space_at_time = 0
+    __power_ups = []
 
     def __init__(self):
         self.score = 0
@@ -231,47 +236,28 @@ class Game:
         #                   (self.__at_x - 32, self.__at_y - 32))
 
         difficulty = .5 + self.score / 1000
+        self.handle_enemies_addition(difficulty)
 
-        if random.random() < enemy_type_span(self.score, -60, 440) / 30 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_easy.png', 5, 10, 2. + random.random() * .5))
+        if random.random() < .0001:
+            self.__power_ups.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'heart.png', 0, 10, 4. + random.random() * 3., property_list=('health',)))
 
-        if random.random() < enemy_type_span(self.score, 100, 560) / 50 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 10, 3. + random.random() * 2))
+        self.handle_shot_list()
+        self.handle_enemy_list()
+        self.handle_power_ups()
 
-        if random.random() < enemy_type_span(self.score, 480, 1230, True) / 260 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 10, 2. + random.random() * 2))
+        if self.lives <= 0:
+            self.display_defeat()
+            self.pause_game = True
 
-        if random.random() < enemy_type_span(self.score, 300, 900) / 50 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
-                      laser_frequency=100, laser_speed=7, laser_damage=5))
+        self.ship_collision_with_shot()
+        self.display_score()
+        self.display_lives()
+        self.display_difficulty(difficulty)
 
-        if random.random() < enemy_type_span(self.score, 800, 1400, True) / 100 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
-                      laser_frequency=100, laser_speed=7, laser_damage=5))
+        pygame.display.flip()
 
-        if random.random() < enemy_type_span(self.score, 450, 1600, True) / 300 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_difficult.png', 8, 20, 2. + random.random() * .1,
-                      direction_shift_by=4, random_direction_shift_after=2))
-
-        if random.random() < enemy_type_span(self.score, 400, 2000, True) / 150 * difficulty:
-            self.enemies.append(
-                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_2.png', 10, 10, 1.4 + random.random() * .1,
-                      laser_frequency=100, laser_speed=12, laser_damage=5, laser_navigation=True,
-                      game_obj=self))
-
-        for shot in self.__shots:
-            shot.move()
-            shot.draw(self.display)
-            if shot.x > 400 or shot.x < 0 or shot.y > 800 or shot.y < 0:
-                shot.delete()
-                self.__shots.remove(shot)
-
+    def handle_enemy_list(self):
         for enemy in self.enemies:
             enemy.move(self.__shots)
             enemy.draw(self.display)
@@ -286,15 +272,60 @@ class Game:
                 self.enemies.remove(enemy)
                 self.lives -= 1
 
-        if self.lives <= 0:
-            self.display_defeat()
-            self.pause_game = True
+    def handle_power_ups(self):
+        for power_up in self.__power_ups:
+            power_up.move(self.__shots)
+            power_up.draw(self.display)
+            if power_up.collision(self.__at_x - 64, self.__at_y - 64, 64, 64) or power_up.health <= 0:
+                power_up.delete()
+                self.__power_ups.remove(power_up)
+                if 'health' in power_up.property_list:
+                    self.lives += 1
+            if power_up.y > 800:
+                power_up.delete()
+                self.__power_ups.remove(power_up)
 
-        self.ship_collision_with_shot()
-        self.display_score()
-        self.display_lives()
+    def handle_shot_list(self):
+        for shot in self.__shots:
+            shot.move()
+            shot.draw(self.display)
+            if shot.x > 400 or shot.x < 0 or shot.y > 800 or shot.y < 0:
+                shot.delete()
+                self.__shots.remove(shot)
 
-        pygame.display.flip()
+    def handle_enemies_addition(self, difficulty):
+        if random.random() < enemy_type_span(self.score, -60, 440) / 30 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_easy.png', 5, 10, 2. + random.random() * .5))
+
+        if random.random() < enemy_type_span(self.score, 100, 560) / 50 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 10, 3. + random.random() * 2))
+
+        if random.random() < enemy_type_span(self.score, 480, 1230, True) / 260 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_medium.png', 5, 10, 2. + random.random() * 2))
+
+        if random.random() < enemy_type_span(self.score, 300, 900) / 80 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
+                      laser_frequency=100, laser_speed=7, laser_damage=5))
+
+        if random.random() < enemy_type_span(self.score, 800, 1400, True) / 200 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_1.png', 6, 10, 1.4 + random.random() * .3,
+                      laser_frequency=100, laser_speed=7, laser_damage=5))
+
+        if random.random() < enemy_type_span(self.score, 450, 1600, True) / 240 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_difficult.png', 8, 20, 2. + random.random() * .1,
+                      direction_shift_by=4, random_direction_shift_after=2))
+
+        if random.random() < enemy_type_span(self.score, 400, 2350, True) / 150 * difficulty:
+            self.enemies.append(
+                Enemy(random.randint(0, 400 - 64), -64, 90, 'enemy_shooter_2.png', 10, 10, 1.4 + random.random() * .1,
+                      laser_frequency=100, laser_speed=12, laser_damage=5, laser_navigation=True,
+                      game_obj=self))
 
     def display_score(self):
         font = pygame.font.SysFont("Arial", 20)
@@ -312,6 +343,11 @@ class Game:
         text2 = font.render(f"Score: {self.score}", True, (255, 255, 255))
         self.display.blit(text, (110, 200))
         self.display.blit(text2, (110, 250))
+
+    def display_difficulty(self, difficulty):
+        font = pygame.font.SysFont("Arial", 20)
+        text = font.render("Difficulty: " + str(round(difficulty, 1)), True, (255, 255, 255))
+        self.display.blit(text, (0, 40))
 
     def handle_movement(self):
         self.__v_x += movement_direction(self.__at_x, self.__to_x, self.__v_x)
