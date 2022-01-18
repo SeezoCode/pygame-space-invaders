@@ -1,5 +1,6 @@
 import math
 import random
+import sys
 
 import pygame
 
@@ -24,8 +25,10 @@ class Shot:
             self.x_momentum = 0
         self.y_momentum = y_momentum
 
-        pygame.mixer.Channel(random.randint(0, 999)).play(
-            pygame.mixer.Sound(f'sounds/shot_1.mp3'))
+        if len(sys.argv) == 2:
+            if sys.argv[1] == "sound" or sys.argv[1] == "sounds":
+                pygame.mixer.Channel(random.randint(0, 999)).play(
+                    pygame.mixer.Sound(f'sounds/shot_1.mp3'))
 
     def move(self):
         self.x += math.cos(math.radians(self.direction)) * self.shot_speed + self.x_momentum

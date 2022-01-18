@@ -1,6 +1,7 @@
 import math
 import os
 import random
+import sys
 
 import pygame
 
@@ -72,5 +73,8 @@ class Enemy:
 
     def delete(self):
         del self
-        pygame.mixer.music.load(f'sounds/explosion_{random.randint(0, 1) + 1}.mp3')
-        pygame.mixer.music.play()
+        if len(sys.argv) == 2:
+            if sys.argv[1] == "sound" or sys.argv[1] == "sounds":
+                pygame.mixer.music.load(f'sounds/explosion_{random.randint(0, 1) + 1}.mp3')
+                pygame.mixer.music.play()
+
